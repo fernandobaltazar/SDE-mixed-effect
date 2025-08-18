@@ -5,8 +5,8 @@ use ieee_arithmetic, only: ieee_is_nan
   
       integer nsteps,ndata,nproc,ndrift,ndiff,num_iter,burn,eta,kappa,nm
       real*8 gamma,lambda,beta,delta,ss
-	parameter (nproc=100,nsteps=200,ndata=100,ndrift=1,ndiff=1,num_iter=10,burn=1,nm=500)
-  parameter (gamma=5.0,eta=10,lambda=2.0,beta=1.0,kappa=10,delta=10,ss=1.0)
+	parameter (nproc=100,nsteps=100,ndata=100,ndrift=1,ndiff=1,num_iter=1000,burn=100,nm=500)
+  parameter (gamma=5.0,eta=10,lambda=2.0,beta=1.0,kappa=10,delta=10,ss=0.5)
   
   integer,parameter :: seed = 805333
   integer ndata_all,i,sd(nproc)
@@ -32,7 +32,6 @@ allocate(bridges_all(nproc,ndata_all))
 
 sd(:)=ndata
 del_bri=ss/((nsteps+1)*1.0)
-print*,"delta_bri",del_bri
 pardrift(1)=gamma
 
 pardiff(1)=beta
@@ -43,14 +42,15 @@ call MCMC(seed,datare,ndata,nsteps,nproc,ndata_all,ndrift,pardrift,ndiff,pardiff
   eta,lambda,kappa,delta,sd,gammas(i),betas(i))
 if (ieee_is_nan(betas(i)))  goto 91 
 
+print*,i,"gamma",gammas(i),sum(gammas(1:i))/i,"beta",betas(i),sum(betas(1:i))/i
 
 
 enddo
 
 
-file1="mg-3.txt"
+file1="mg.txt"
 
-file2="mb-3.txt"
+file2="mb.txt"
 open(1,file=file1)
 open(2,file=file2)
 
@@ -118,7 +118,7 @@ integer seed
 seed=765432
 
  call box(seed,x)
-!print*,x
+
 
 return
 end subroutine
@@ -276,43 +276,39 @@ Infi=999999999999999999999999999999.00
    call prior(eta,lambda,kappa,delta,nproc,redrift,gammas(1),betas(1)) 
    call SG1(nproc,ndata,datare,ss,G1)
    call  SELES(nproc,ndata,datare,nsteps,ndata_all,ss,matls)
-beta0=1.0
-gamma0=5.0
+
 
     do i=2,ns
-    call SG2(nproc,ndata,datare,redrift,GS2(i))
+    call SG2(nproc,ndata,datare,redrift,G2)
    
-    call mat_bridge(datare,ndata,nsteps,nproc,ndata_all,ndrift,redrift,ndiff,beta0,del_bri,bridges_all)
+    call mat_bridge(datare,ndata,nsteps,nproc,ndata_all,ndrift,redrift,ndiff,betas(i-1),del_bri,bridges_all)
     
-    call YSR(datare,bridges_all,ndata,sd,nsteps,nproc,ndata_all,gamma0,redrift,beta0,ss,Y)
+    call YSR(datare,bridges_all,ndata,sd,nsteps,nproc,ndata_all,gammas(i-1),redrift,betas(i-1),ss,Y)
     call SES(nproc,ndata,ndata_all,matls,del_bri,redrift,Y,ES)
-     ESMC(1,i)=ES(1)
-      ESMC(2,i)=ES(2)
-    call STS(nproc,ndata,datare,beta0,ss,bb)
+     E1=ES(1)
+      E2=ES(2)
+    call STS(nproc,ndata,datare,betas(i-1),ss,bb)
  
-    call SBS(nproc,ndata,ndata_all,matls,del_bri,beta0,Y,BS)
+    call SBS(nproc,ndata,ndata_all,matls,del_bri,betas(i-1),Y,BS)
     
+
      do j=1,nproc
-        call truncated_normal_ab_sample(((bb(j)-gamma0)/BS(j)),SQRT(1.0/BS(j)),min,Infi,seed,redrift(j))
-       
-       as(i,j)=redrift(j)
-   
+         call truncated_normal_ab_sample(((bb(j)-gammas(i-1))/BS(j)),SQRT(1.0/BS(j)),min,Infi,seed,redrift(j))
    
       enddo
  
-      G2=SUM(GS2)/ns
-      E1=SUM(ESMC(1,:))/ns
-E2=SUM(ESMC(2,:))/ns
 sa=SUM(redrift)
 
-call poste_beta(delta,kappa,G1,G2,E1,E2,beta0,nproc,ndata,burn,betas(i)) 
+call poste_beta(delta,kappa,G1,G2,E1,E2,betas(i-1),nproc,ndata,burn,betas(i)) 
+
 
   call rgammas(1,nproc+eta,lambda+sa,gam(1))
   gammas(i)=gam(1)
 
+
 enddo
-bm=SUM(betas)/ns
-gm=SUM(gammas)/ns
+bm=SUM(betas(:))/ns
+gm=SUM(gammas(:))/ns
 
 
  return  
@@ -328,6 +324,7 @@ real*8 gamma,beta,redrift(nproc),lam(1),lambda,delta
 
     call rgammas(1,kappa,delta,lam(1))
   beta=1/SQRT(lam(1))
+  gamma=5.0
 
   call rgammas(nproc,1,gamma,redrift)
 
@@ -357,9 +354,7 @@ t0=0.0
 
    !   call FormerDiffusionBridge(ndrift,pardrift,ndiff,pardiff,del_bri,nsteps,datare(i,j),datare(i,j+1),bridge,numrej)
       bridges_all(i,init:end)=bridge
-     !print*,j,init,end 
-     !print*,"bridge",bridges_all(i,init:end)
-
+     
     enddo
     enddo
    
@@ -390,11 +385,7 @@ real*8 data_lam(nprocess,ndata),time1(nprocess,ndata_all),time2(nprocess,ndata_a
 
  call Lamperti(data,nprocess,ndata,pardiff,data_lam)
  call Dif_Times(nsteps,delta,sd,ndata_all,nprocess,time1,time2)
- ! print*,time1,time2
-
-
-  !stop
-  do i=1,nprocess
+   do i=1,nprocess
     size=nsteps*(sd(i)-1)+sd(i)
     do j=1,sd(i)-1
     init=nsteps*(j-1)+j
@@ -673,14 +664,14 @@ ES(:)=0.0
 do i=1,nproc
   do j=2,ndata_all
     
-    ES(1)=ES(1)+(matls(i,j-1)**2)*delbri
-    ES(2)=ES(2)+matls(i,j-1)*Ys(i,j-1)*delbri
+    ES(1)=ES(1)+(re(i)**2)*(matls(i,j-1)**2)*delbri
+    ES(2)=ES(2)+(re(i)**2)*matls(i,j-1)*Ys(i,j-1)*delbri
 !  print*,matls(i,j),Ys(i,j),matls(i,j)*Ys(i,j) 
   enddo
-  ES(1)=ES(1)+ES(1)*(re(i)**2)/2.0
-  ES(2)=ES(2)+ES(2)*(re(i)**2)
+  
 !  print*,ES
 enddo
+ES(1)=ES(1)/2.0
 ES(2)=-ES(2)
 !print*,ES
 return
@@ -1259,7 +1250,7 @@ if(rate>0) then
   enddo   
  ! print*,betas(total)
 else
-print*,"2"
+!print*,"2"
   do i=2,total
 !print*,i
     call rgammas(1,shape,rate,ini)
@@ -1310,4 +1301,6 @@ real*8 t0,tn,x0,xn,T(n+2),alpha,sigma,X(n+2),Z(n+2),norval,sd
   
  return 
 end subroutine
+
+
 
