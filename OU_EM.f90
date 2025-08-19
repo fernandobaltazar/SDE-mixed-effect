@@ -3,11 +3,11 @@ program EM_OU
  implicit none
       integer numpara,nsteps,ndata,nproc,ndrift,ndiff,num_iter,burn,mc,ndatat,nm
       real*8 beta_0,alpha_0,Infi,delta
-  parameter (numpara=4,nproc=100,nsteps=100,ndatat=100,ndata=50,ndrift=2,ndiff=1,num_iter=100,mc=100,nm=500)
+  parameter (numpara=4,nproc=100,nsteps=100,ndatat=100,ndata=100,ndrift=2,ndiff=1,num_iter=50,mc=100,nm=500)
   integer ndata_all,i
   real*8 startx,x,integrate,lambda,a(2),b(2,2)
-  real*8 pardrift(ndrift),del_bri,pardiff(ndiff),redrift(nproc)
-  parameter(Infi=999999999999999999999999999999.00,delta=0.05)
+  real*8 pardrift(ndrift),del,pardiff(ndiff),redrift(nproc)
+  parameter(Infi=999999999999999999999999999999.00,delta=0.5)
   REAL*8, allocatable, dimension(:) :: da 
   REAL*8, allocatable, dimension(:,:) :: datare,bridges_all
   real*8 tiempo_inicio, tiempo_final
@@ -22,32 +22,32 @@ call cpu_time(tiempo_inicio)
 
 
 
+!print*,"delta_obs",del_obs
+!print*,"delta_bri",del_bri
 ndata_all=nsteps*(ndata-1)+ndata
 do i=1,nm
   pardrift(1)=5.0
 pardrift(2)=0.0
 pardiff(1)=1.0
-beta_0=1.0
-alpha_0=5.0
+beta_0=3.0
+alpha_0=1.0
 
-del_obs=delta*ndatat/ndata
-del_bri=del_obs/((nsteps+1)*1.0)
- 11 call GenerateData(delta,ndatat,ndrift,pardrift,ndiff,pardiff,nproc,datare)
-
- 
+del=delta/10.0
+ 11 call GenerateData(del,ndatat,ndrift,pardrift,ndiff,pardiff,nproc,datare)
 
 
 
  
-call EM(Infi,seed,datare,ndata,nsteps,nproc,ndata_all,mc,ndrift,pardrift,ndiff,pardiff,delta,num_iter,&
+call EM(Infi,seed,datare,ndata,nsteps,nproc,ndata_all,mc,ndrift,pardrift,ndiff,pardiff,del,num_iter,&
 alpha_0,beta_0,gammas(i),betas(i))
 
 if(ISNAN(gammas(i))) goto 11
+print*,i,"gamma",gammas(i),sum(gammas(1:i))/i,"beta",betas(i),sum(betas(1:i))/i
 
 enddo
-file1="mg2.txt"
+file1="mg.txt"
 
-file2="mb2.txt"
+file2="mb.txt"
 open(1,file=file1)
 open(2,file=file2)
 
@@ -138,14 +138,19 @@ end subroutine
      call rgammas(1,1,lambda,re(i))
     
 
- 
+  !re(i)=rg(1)
       pardrift(1)=re(i)
 
      call diffusion(ndrift,pardrift,ndiff,pardiff,delta,startx,(ndata-2),data)
-        datare(i,:)=data
+     
+   !   call sim_ou_exac(startx,ndata,pardrift,ndrift,pardiff,ndiff,delta,data)
+      datare(i,:)=data
       enddo
       
+  !  print*,"real_alpha",re(1)  
       
+  ! print*,"mean obs", SUM(re)/nproc
+    
   
   return
   end subroutine 
@@ -291,8 +296,8 @@ min=0.0
 delbri=delta/((nsteps+1)*1.0)
 ti=0.0
 
-alphas(1)=alpha_0
-betas(1)=beta_0
+alphas(1)=5.0
+betas(1)=1.0
 
     call SG1(nproc,ndata,datare,delta,G1)
     
@@ -310,12 +315,12 @@ betas(1)=beta_0
     GS(2)=G2
     alphas(k)=1.0/abar
     call Sbetas(nproc,ndata,E1,E2,GS,betas(k))
-   
+ !  print*,k,"beta",betas(k),"alpha",alphas(k)
+  
   enddo
 
 alpha=alphas(num_iter)
 beta=betas(num_iter)
-
 
 
 return 
@@ -484,8 +489,12 @@ del_bri=delta/(nsteps+1)
 t0=0.0
 tn=delta
     call bridge_ou_exact(t0,tn,datare(i,j),datare(i,j+1),nsteps,pardrift(1),beta,bridge)
-       bridges_all(i,init:end)=bridge
- 
+    
+ !    call FormerDiffusionBridge(ndrift,pardrift,ndiff,pardiff,del_bri,nsteps,datare(i,j),datare(i,j+1),bridge,numrej)
+      bridges_all(i,init:end)=bridge
+    ! print*,j,init,end 
+   !  print*,"bridge",bridges_all(i,init:end)
+
     enddo
     enddo
    
@@ -793,8 +802,7 @@ real*8 E1,E2,GS(2),beta,k,num,dem,u,a,b
 
 k=nproc*(ndata-1)
 
-a=-0.1
-b=0.1
+
 
 
 !IF (GS(1)+GS(2)+E1>0) THEN
@@ -815,7 +823,7 @@ b=0.1
 num=(8*(k**3)*(E2**2+8*(E1+GS(1)+GS(2)*k-E2*SQRT(E2**2+8.0*(GS(1)+GS(2)+E1)*k))))
 dem=(E2-SQRT(E2**2+8.0*(GS(1)+GS(2)+E1)*k))**4
 !print*,"cond",num/dem,GS(1)+GS(2)+E1,E2,k
-beta=-E2/(2.0*k)+SQRT(E2**2+8.0*(GS(1)+GS(2)+E1)*k)/(2.0*k)
+beta=-E2/(2.0*k)+SQRT(E2**2+3.0*(GS(1)+GS(2)+E1)*k)/(2.0*k)
 !print*,"b1",beta,E2/(2.0*k)+SQRT(E2**2+8.0*(GS(1)+GS(2)+E1)*k)/(2.0*k),E2/(2.0*k)-SQRT(E2**2+8.0*(GS(1)+GS(2)+E1)*k)/(2.0*k)
 !ELSE 
 !call random_number(u)
